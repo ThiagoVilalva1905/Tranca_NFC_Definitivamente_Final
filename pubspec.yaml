@@ -1,0 +1,24 @@
+name: cracha_virtual
+description: "Um crachá de acesso virtual com código estático."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.3 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # ESTE É O PLUGIN CORRETO PARA HCE com feedback no Dart.
+  flutter_nfc_kit: ^3.6.0
+
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="servicedesc">Serviço de Crachá Virtual</string>
+    <string name="aiddescription">Crachá de Acesso Corporativo</string>
+</resources>
