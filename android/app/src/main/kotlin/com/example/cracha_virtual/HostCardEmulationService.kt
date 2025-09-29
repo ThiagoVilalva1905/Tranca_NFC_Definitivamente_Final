@@ -1,102 +1,184 @@
-// Define o pacote ao qual este arquivo pertence. Deve corresponder à estrutura de pastas do seu projeto.
+/**
+Esse código funiona da seguinte maneira:
+
+Critérios: 
+a entrada tem que ter no máximo 27 caracteres.
+Só é permitido os seguinte caracteres (que no código foi definido como ALFABETO): abcdefghijklmnopqrstuvwxyz._-
+a saida pode ter no máximo 20 bytes (incluindo os bytes de validação)
+
+Exemplo usando -> m.p
+A entrada tem 3 caracteres (está dentro do limite de 27 caracteres);
+Os caracteres estão dentro dos permitidos;
+
+cada caractere é mapeado para sua posição (índice) no nosso ALFABETO e, em seguida, convertido para uma representação binária de bits.
+m -> 12 -> 01100
+. -> 26 -> 11010
+p -> 15 -> 01111
+
+osa bits são juntado para obter uma única sequência:
+011001101001111
+
+Agora, essa sequência  é "empacotada" em bytes (grupos de 8 bits):
+primeiro byte:
+01100110 -> convertendo para hex fica 66
+segundo byte:
+Pega os 7 bits restantes e completa com um 0 no final para formar um byte completo:
+10011110 -> convertido para hex fica 9E
+
+Assim, m.p foi comprimido para apenas 2 bytes -> 669E
+
+por fim, vem a montagem do payload final:
+Primeiro byte: tamanho + resultado da compressão + 90 00 (validação)
+
+no exemlo fica: 03 66 9E 90 00
+*/
+
+// Define o pacote ao qual este arquivo pertence.
 package com.example.cracha_virtual // Use seu pacote correto
 
-// Importa a classe base do Android para criar um serviço de emulação de cartão (HCE).
 import android.nfc.cardemulation.HostApduService
-// Usado para passar dados extras, embora não seja utilizado ativamente neste exemplo.
 import android.os.Bundle
-// Ferramenta de log do Android para depuração.
 import android.util.Log
 
 /**
- * Esta classe é o coração da emulação de cartão NFC.
- * Ela herda de 'HostApduService', uma classe do Android feita especificamente para isso.
- * O sistema operacional Android direciona automaticamente os comandos NFC (APDUs) do leitor
- * para esta classe quando o app está em primeiro plano.
+ * Serviço de emulação de cartão (HCE) que responde a comandos de leitores NFC.
+ * Esta versão utiliza uma codificação customizada de 5 bits para enviar dados.
  */
 class HostCardEmulationService : HostApduService() {
 
-    // 'companion object' é semelhante a membros estáticos em Java.
-    // As constantes definidas aqui são acessíveis a partir da classe sem precisar criar uma instância.
     companion object {
-        // TAG para filtrar mensagens no Logcat, facilitando a depuração.
         const val TAG = "HostCardEmulationService"
 
-        // APDU (Application Protocol Data Unit) é o formato de mensagem trocado entre um cartão e um leitor.
-        // Este é o comando "SELECT AID" que o leitor de NFC (a fechadura) envia para encontrar o nosso "cartão".
-        // Estrutura do comando:
-        // CLA | INS | P1 | P2 | Lc  | Data (Nosso AID)
-        // 00  | A4  | 04 | 00 | 07  | F0A1B2C3D4E5F6
+        // Comando APDU "SELECT AID" esperado do leitor NFC.
         val SELECT_APDU = byteArrayOf(
-            0x00.toByte(), // CLA (Classe do comando) - Padrão para muitas aplicações.
-            0xA4.toByte(), // INS (Código da instrução) - 0xA4 é o código padrão para "SELECT".
-            0x04.toByte(), // P1 (Parâmetro 1) - Indica seleção por nome (AID).
-            0x00.toByte(), // P2 (Parâmetro 2) - Informações adicionais, 00 é comum.
-            0x07.toByte(), // Lc (Length of command data) - O tamanho do nosso AID em bytes (7 bytes).
-            // Data: O nosso Application ID (AID). DEVE ser o mesmo definido no arquivo 'apduservice.xml'.
+            0x00.toByte(), 0xA4.toByte(), 0x04.toByte(), 0x00.toByte(), 0x07.toByte(),
             0xF0.toByte(), 0xA1.toByte(), 0xB2.toByte(), 0xC3.toByte(), 0xD4.toByte(), 0xE5.toByte(), 0xF6.toByte()
         )
 
-        // Status Words (SW): Respostas de 2 bytes que o cartão envia de volta ao leitor.
-        // 0x9000 (SW_OK) é o código universal para "Comando executado com sucesso".
+        // Status Words (SW) - Respostas de status de 2 bytes.
         val SW_OK = byteArrayOf(0x90.toByte(), 0x00.toByte())
-        // Código de erro para quando o comando recebido não é o esperado.
         val SW_UNKNOWN_COMMAND = byteArrayOf(0x6D.toByte(), 0x00.toByte())
-        // Outro código de erro para comandos nulos/inválidos.
-        val SW_UNKNOWN_COMMAND2 = byteArrayOf(0xA1.toByte(), 0x00.toByte())
     }
 
-    /**
-     * Este é o método MAIS IMPORTANTE da classe.
-     * Ele é chamado pelo sistema Android toda vez que um leitor NFC envia um comando (APDU) para o dispositivo.
-     *
-     * @param commandApdu O comando enviado pelo leitor, como um array de bytes.
-     * @param extras Informações adicionais do sistema (não usado aqui).
-     * @return A resposta que queremos enviar de volta ao leitor, também como um array de bytes.
-     */
-    override fun processCommandApdu(commandApdu: ByteArray?, extras: Bundle?): ByteArray? {
-        // Primeiro, verifica se o comando recebido não é nulo.
+   
+    override fun processCommandApdu(commandApdu: ByteArray?, extras: Bundle?): ByteArray {
         if (commandApdu == null) {
-            return SW_UNKNOWN_COMMAND2 // Se for nulo, retorna um erro.
+            return SW_UNKNOWN_COMMAND
         }
 
-        // Usando a função de extensão abaixo para imprimir o comando recebido de forma legível no Logcat.
         Log.d(TAG, "Comando APDU recebido: ${commandApdu.toHexString()}")
 
-        // Compara o comando recebido do leitor com o comando "SELECT_APDU" que esperamos.
+        // Verifica se o comando recebido é o SELECT AID que esperamos.
         if (commandApdu.contentEquals(SELECT_APDU)) {
-            // Se o comando for o correto, significa que o leitor nos encontrou!
-            Log.i(TAG, "Comando SELECT AID correto. Respondendo com sucesso.")
-            
-            // Aqui você pode enviar uma resposta customizada junto com o status de sucesso.
-            val responseMessage = "ACESSO_LIBERADO"
-            
-            // Concatena a nossa mensagem de resposta com o código de status "OK".
-            // O leitor receberá "ACESSO_LIBERADO" e saberá que o comando foi bem-sucedido.
-            return responseMessage.toByteArray(Charsets.UTF_8) + SW_OK
+            Log.i(TAG, "Comando SELECT AID correto. Codificando e enviando a resposta.")
+
+
+            // INÍCIO DA LÓGICA PARA CODIFICAR
+
+            // 1. Defina aqui o identificador que será enviado.
+            // A entrada deve ter no máximo 27 caracteres e usar apenas o alfabeto permitido.
+            val userIdentifier = "m.p" // <-- CÓDIGO AJUSTADO AQUI
+            Log.d(TAG, "Identificador original: '$userIdentifier'")
+
+
+            // 2. Codifica a string usando a nossa função customizada.
+            // O resultado será um payload de no máximo 18 bytes.
+            val encodedPayload = encodeCustom(userIdentifier)
+            Log.d(TAG, "Payload codificado (Hex): ${encodedPayload.toHexString()} (${encodedPayload.size} bytes)")
+
+            // 3. Anexa o Status Word de sucesso (0x9000) e retorna a resposta final.
+            return encodedPayload + SW_OK
+
+            //FIM DA LÓGICA DE CODIFICAÇÃO CUSTOMIZADA
+
         } else {
-            // Se o leitor enviou um comando que não reconhecemos.
             Log.w(TAG, "Comando desconhecido recebido.")
-            // Responde com um código de erro para informar ao leitor que não entendemos o comando.
             return SW_UNKNOWN_COMMAND
         }
     }
 
     /**
-     * Este método é chamado quando a conexão NFC é perdida.
-     * (Ex: o usuário afastou o celular do leitor).
-     *
-     * @param reason O motivo da desativação (ex: LINK_LOSS, DESELECTED).
+     * Chamado quando a conexão NFC é perdida.
      */
     override fun onDeactivated(reason: Int) {
         Log.d(TAG, "Desativado: Razão -> $reason")
     }
 }
 
+
+
+//FUNÇÕES DE CODIFICAÇÃO/DECODIFICAÇÃO ADICIONADAS FORA DA CLASSE
+
+// ALFABÉTO SÃO AS POSSIBILIDADES PERMITIDAS PARA O PASSAPORTE
+private const val ALFABETO = "abcdefghijklmnopqrstuvwxyz._-"
+
+// ASSOCIA O CARACTERE AO INDICE NA ORDEM APRESENTADA: a = 0, b = 1, .... 
+private val CHAR_TO_INT_MAP = ALFABETO.withIndex().associate { (index, char) -> char to index }
+
 /**
- * Esta é uma "função de extensão" em Kotlin.
- * Ela adiciona a função 'toHexString()' a qualquer objeto do tipo 'ByteArray'.
- * É uma forma muito útil de converter dados binários em texto legível para depuração.
- * Exemplo: [0xF0, 0xA1] se torna "F0 A1".
+ * Codifica uma string de ATÉ 27 caracteres usando o alfabeto customizado de 5 bits.
  */
+fun encodeCustom(input: String): ByteArray {
+    require(input.length <= 27) { "A entrada não pode exceder 27 caracteres." }
+
+    val textoValido = input.filter { it in ALFABETO }
+    val bitStringBuilder = StringBuilder()
+
+    for (char in textoValido) {
+        val index = CHAR_TO_INT_MAP[char]!!
+        bitStringBuilder.append(Integer.toBinaryString(index).padStart(5, '0'))
+    }
+
+    // TRANSFORMA BITS EM BYTES
+    val bits = bitStringBuilder.toString()
+
+    val numBytes = (bits.length + 7) / 8
+    val dataBytes = ByteArray(numBytes)
+    for (i in 0 until numBytes) {
+        val end = minOf((i + 1) * 8, bits.length)
+        val byteString = bits.substring(i * 8, end).padEnd(8, '0')
+        dataBytes[i] = byteString.toInt(2).toByte()
+    }
+
+    // MONTAGEM DO CÓDIGO FINAL
+    val payload = ByteArray(1 + dataBytes.size)
+    payload[0] = textoValido.length.toByte()
+    System.arraycopy(dataBytes, 0, payload, 1, dataBytes.size)
+    return payload
+}
+
+
+// Decodifica os bytes de volta para a string original.
+ 
+fun decodeCustom(payload: ByteArray): String {
+    if (payload.isEmpty()) return ""
+    val originalLength = payload[0].toInt()
+    if (originalLength == 0) return ""
+
+    val dataBytes = payload.copyOfRange(1, payload.size)
+    val bitStringBuilder = StringBuilder()
+
+    for (byte in dataBytes) {
+        bitStringBuilder.append(
+            Integer.toBinaryString(byte.toInt() and 0xFF).padStart(8, '0')
+        )
+    }
+    val bits = bitStringBuilder.toString()
+    val result = StringBuilder()
+
+    for (i in 0 until originalLength) {
+        val start = i * 5
+        val end = start + 5
+        if (end > bits.length) break
+
+        val bitChunk = bits.substring(start, end)
+        val index = bitChunk.toInt(2)
+        if (index < ALFABETO.length) {
+            result.append(ALFABETO[index])
+        }
+    }
+    return result.toString()
+}
+
+
 fun ByteArray.toHexString(): String = joinToString(separator = " ") { "%02X".format(it) }
